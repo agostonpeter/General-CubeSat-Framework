@@ -139,8 +139,10 @@ task HandleCMD(void * vParameters) {
 						if (payloadQueues[i].taskID == tc.taskID)
 							break;
 					}
-
-					cwrite(payloadQueues[i].queueHandle, tc);
+					if (i==NumberOfPayloadQueues) 
+						printf("can't find queue for %u task\n",sParameters->taskID);
+					else 
+						cwrite(payloadQueues[i].queueHandle, tc);
 
 				}
 			}
@@ -231,6 +233,8 @@ task SendTM(void * vParameters) {
 
 	uint16_t error = 0;
 
+	uint8_t moreData = 0;
+
 	int i = 0;
 
 	spriority(sParameters->priority);
@@ -256,13 +260,19 @@ task SendTM(void * vParameters) {
 
 		error = cread(sendTMQueue, receivedTC);
 		error ? (error = 0) : (error = 1); //invert error, because it returns 1 on success and 0 on error
+		i = 0;
+		do {
+			printf("%lu\tID:0x%X\ttask sending TM %d\n", gettime(ms), sParameters->taskID, i);
+			if (!error) error = sParameters->readMemory(&receivedTC, &dataToSend, &moreData);
 
-		if (!error) error = sParameters->readMemory(&receivedTC, &dataToSend);
+			if (!error) error = sParameters->encodeTM(&receivedTC, &dataToSend, &encodedDataToSend);
 
-		if (!error) error = sParameters->encodeTM(&receivedTC, &dataToSend, &encodedDataToSend);
+			if (!error) error = sParameters->sendOnboard(&encodedDataToSend);
 
-		if (!error) error = sParameters->sendOnboard(&encodedDataToSend);
+			i++;
 
+		} while (moreData && !error);
+		moreData = 0;
 	}
 
 }
@@ -322,6 +332,7 @@ task ControlPL(void * vParameters) {
 		if (payloadQueues[i].taskID == sParameters->taskID)
 			break;
 	}
+	if (i==NumberOfPayloadQueues) printf("can't find queue for %u task\n",sParameters->taskID);
 
 	OnboardTC receivedTC;
 	receivedTC.size = MAX_DATA_SIZE_TC;
@@ -351,16 +362,16 @@ task ControlPL(void * vParameters) {
 				int j = 0;
 				while (nelem(payloadQueues[i].queueHandle) == 0  && j < numberOfPolls) {
 					printf("%lu\tID:0x%X\ttask running %d/%d\n", gettime(ms), sParameters->taskID, j + 1, numberOfPolls);
-
+					PLData.dataField.size = MAX_DATA_SIZE_PAYLOAD_POLL;
 					error = sParameters->receiveOnboard(&receivedTC, &PLData);
 
-					error = sParameters->writeMemory(&PLData);
+					error = sParameters->writeMemory(&receivedTC, &PLData);
 
 					j++;
-					if(j<numberOfPolls) sdelay(pollInterval, ms);
+					if (j < numberOfPolls) sdelay(pollInterval, ms);
 				}
 			}
-			else{
+			else {
 				sParameters->stopPL(&receivedTC);
 				printf("%lu\tID:0x%X\ttask stopped\n", gettime(ms), sParameters->taskID);
 

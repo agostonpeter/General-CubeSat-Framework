@@ -12,7 +12,7 @@
 
 #define MAX_DATA_SIZE_SUBSYSTEM		100
 #define MAX_DATA_SIZE_COLLECTHK		100
-#define MAX_DATA_SIZE_SENDTM		200
+#define MAX_DATA_SIZE_SENDTM		300
 #define MAX_DATA_SIZE_PAYLOAD_POLL	512
 
 #define FIFOCHANNEL_MAXDELAY portMAX_DELAY
@@ -60,7 +60,7 @@ typedef struct _GetTCParameters{
 typedef struct _SendTMParameters{
 	uint16_t taskID;
 	uint16_t priority;
-	uint16_t (*readMemory)(OnboardTC * receivedTC, OnboardTM * dataToSend);
+	uint16_t (*readMemory)(OnboardTC * receivedTC, OnboardTM * dataToSend, uint8_t * moreData);
 	uint16_t (*encodeTM)(OnboardTC * receivedTC, OnboardTM * dataToSend, OnboardTM * encodedDataToSend);
 	uint16_t (*sendOnboard)(OnboardTM * encodedDataToSend);
 }SendTMParameters;
@@ -89,7 +89,7 @@ typedef struct _ControlPLParameters{
 	uint16_t (*startPL)(OnboardTC * receivedTC);
 	uint16_t (*checkTC)(OnboardTC * receivedTC, uint16_t * numberOfPolls, uint32_t * pollInterval);
 	uint16_t (*receiveOnboard)(OnboardTC * receivedTC, OnboardTM * PLData);
-	uint16_t (*writeMemory)(OnboardTM * PLData);
+	uint16_t (*writeMemory)(OnboardTC * receivedTC, OnboardTM * PLData);
 	uint16_t (*stopPL)(OnboardTC * receivedTC);
 }ControlPLParameters;
 

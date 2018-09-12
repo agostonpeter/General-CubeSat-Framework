@@ -1,0 +1,109 @@
+[1mdiff --git a/framework.c b/framework.c[m
+[1mindex 8670e0f..df7e468 100644[m
+[1m--- a/framework.c[m
+[1m+++ b/framework.c[m
+[36m@@ -139,8 +139,10 @@[m [mtask HandleCMD(void * vParameters) {[m
+ 						if (payloadQueues[i].taskID == tc.taskID)[m
+ 							break;[m
+ 					}[m
+[31m-[m
+[31m-					cwrite(payloadQueues[i].queueHandle, tc);[m
+[32m+[m					[32mif (i==NumberOfPayloadQueues)[m[41m [m
+[32m+[m						[32mprintf("can't find queue for %u task\n",sParameters->taskID);[m
+[32m+[m					[32melse[m[41m [m
+[32m+[m						[32mcwrite(payloadQueues[i].queueHandle, tc);[m
+ [m
+ 				}[m
+ 			}[m
+[36m@@ -231,6 +233,8 @@[m [mtask SendTM(void * vParameters) {[m
+ [m
+ 	uint16_t error = 0;[m
+ [m
+[32m+[m	[32muint8_t moreData = 0;[m
+[32m+[m
+ 	int i = 0;[m
+ [m
+ 	spriority(sParameters->priority);[m
+[36m@@ -256,13 +260,19 @@[m [mtask SendTM(void * vParameters) {[m
+ [m
+ 		error = cread(sendTMQueue, receivedTC);[m
+ 		error ? (error = 0) : (error = 1); //invert error, because it returns 1 on success and 0 on error[m
+[32m+[m		[32mi = 0;[m
+[32m+[m		[32mdo {[m
+[32m+[m			[32mprintf("%lu\tID:0x%X\ttask sending TM %d\n", gettime(ms), sParameters->taskID, i);[m
+[32m+[m			[32mif (!error) error = sParameters->readMemory(&receivedTC, &dataToSend, &moreData);[m
+ [m
+[31m-		if (!error) error = sParameters->readMemory(&receivedTC, &dataToSend);[m
+[32m+[m			[32mif (!error) error = sParameters->encodeTM(&receivedTC, &dataToSend, &encodedDataToSend);[m
+ [m
+[31m-		if (!error) error = sParameters->encodeTM(&receivedTC, &dataToSend, &encodedDataToSend);[m
+[32m+[m			[32mif (!error) error = sParameters->sendOnboard(&encodedDataToSend);[m
+ [m
+[31m-		if (!error) error = sParameters->sendOnboard(&encodedDataToSend);[m
+[32m+[m			[32mi++;[m
+ [m
+[32m+[m		[32m} while (moreData && !error);[m
+[32m+[m		[32mmoreData = 0;[m
+ 	}[m
+ [m
+ }[m
+[36m@@ -322,6 +332,7 @@[m [mtask ControlPL(void * vParameters) {[m
+ 		if (payloadQueues[i].taskID == sParameters->taskID)[m
+ 			break;[m
+ 	}[m
+[32m+[m	[32mif (i==NumberOfPayloadQueues) printf("can't find queue for %u task\n",sParameters->taskID);[m
+ [m
+ 	OnboardTC receivedTC;[m
+ 	receivedTC.size = MAX_DATA_SIZE_TC;[m
+[36m@@ -351,16 +362,16 @@[m [mtask ControlPL(void * vParameters) {[m
+ 				int j = 0;[m
+ 				while (nelem(payloadQueues[i].queueHandle) == 0  && j < numberOfPolls) {[m
+ 					printf("%lu\tID:0x%X\ttask running %d/%d\n", gettime(ms), sParameters->taskID, j + 1, numberOfPolls);[m
+[31m-[m
+[32m+[m					[32mPLData.dataField.size = MAX_DATA_SIZE_PAYLOAD_POLL;[m
+ 					error = sParameters->receiveOnboard(&receivedTC, &PLData);[m
+ [m
+[31m-					error = sParameters->writeMemory(&PLData);[m
+[32m+[m					[32merror = sParameters->writeMemory(&receivedTC, &PLData);[m
+ [m
+ 					j++;[m
+[31m-					if(j<numberOfPolls) sdelay(pollInterval, ms);[m
+[32m+[m					[32mif (j < numberOfPolls) sdelay(pollInterval, ms);[m
+ 				}[m
+ 			}[m
+[31m-			else{[m
+[32m+[m			[32melse {[m
+ 				sParameters->stopPL(&receivedTC);[m
+ 				printf("%lu\tID:0x%X\ttask stopped\n", gettime(ms), sParameters->taskID);[m
+ [m
+[1mdiff --git a/framework.h b/framework.h[m
+[1mindex 0f8348e..bf6eea3 100644[m
+[1m--- a/framework.h[m
+[1m+++ b/framework.h[m
+[36m@@ -12,7 +12,7 @@[m
+ [m
+ #define MAX_DATA_SIZE_SUBSYSTEM		100[m
+ #define MAX_DATA_SIZE_COLLECTHK		100[m
+[31m-#define MAX_DATA_SIZE_SENDTM		200[m
+[32m+[m[32m#define MAX_DATA_SIZE_SENDTM		300[m
+ #define MAX_DATA_SIZE_PAYLOAD_POLL	512[m
+ [m
+ #define FIFOCHANNEL_MAXDELAY portMAX_DELAY[m
+[36m@@ -60,7 +60,7 @@[m [mtypedef struct _GetTCParameters{[m
+ typedef struct _SendTMParameters{[m
+ 	uint16_t taskID;[m
+ 	uint16_t priority;[m
+[31m-	uint16_t (*readMemory)(OnboardTC * receivedTC, OnboardTM * dataToSend);[m
+[32m+[m	[32muint16_t (*readMemory)(OnboardTC * receivedTC, OnboardTM * dataToSend, uint8_t * moreData);[m
+ 	uint16_t (*encodeTM)(OnboardTC * receivedTC, OnboardTM * dataToSend, OnboardTM * encodedDataToSend);[m
+ 	uint16_t (*sendOnboard)(OnboardTM * encodedDataToSend);[m
+ }SendTMParameters;[m
+[36m@@ -89,7 +89,7 @@[m [mtypedef struct _ControlPLParameters{[m
+ 	uint16_t (*startPL)(OnboardTC * receivedTC);[m
+ 	uint16_t (*checkTC)(OnboardTC * receivedTC, uint16_t * numberOfPolls, uint32_t * pollInterval);[m
+ 	uint16_t (*receiveOnboard)(OnboardTC * receivedTC, OnboardTM * PLData);[m
+[31m-	uint16_t (*writeMemory)(OnboardTM * PLData);[m
+[32m+[m	[32muint16_t (*writeMemory)(OnboardTC * receivedTC, OnboardTM * PLData);[m
+ 	uint16_t (*stopPL)(OnboardTC * receivedTC);[m
+ }ControlPLParameters;[m
+ [m
